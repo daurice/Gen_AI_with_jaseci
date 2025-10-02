@@ -7,6 +7,7 @@
 #
 #  Thank you users! We ❤️ you! - Krrish & Ishaan
 
+from io import StringIO
 import ast
 import asyncio
 import base64
@@ -40,7 +41,6 @@ from os.path import abspath, dirname, join
 
 import aiohttp
 import dotenv
-import fastuuid as uuid
 import httpx
 import openai
 import tiktoken
@@ -59,6 +59,7 @@ import litellm.litellm_core_utils.audio_utils.utils
 import litellm.litellm_core_utils.json_validation_rule
 import litellm.llms
 import litellm.llms.gemini
+from litellm._uuid import uuid
 from litellm.caching._internal_lru_cache import lru_cache_wrapper
 from litellm.caching.caching import DualCache
 from litellm.caching.caching_handler import CachingHandlerResponse, LLMCachingHandler
@@ -724,17 +725,21 @@ def function_setup(  # noqa: PLR0915
                 messages = kwargs["messages"]
             ### PRE-CALL RULES ###
             if (
-                isinstance(messages, list)
+                Rules.has_pre_call_rules()
+                and isinstance(messages, list)
                 and len(messages) > 0
                 and isinstance(messages[0], dict)
                 and "content" in messages[0]
             ):
+
+                buffer = StringIO()
+                for m in messages:
+                    content = m.get("content", "")
+                    if content is not None and isinstance(content, str):
+                        buffer.write(content)
+
                 rules_obj.pre_call_rules(
-                    input="".join(
-                        m.get("content", "")
-                        for m in messages
-                        if "content" in m and isinstance(m["content"], str)
-                    ),
+                    input=buffer.getvalue(),
                     model=model,
                 )
         elif (
