@@ -25,3 +25,7 @@ node reminders{
     has date:str=datetime.datetime.now().isoformat()[:19];
     has sent:bool=False;
     }
+# Root node definition 
+node root {
+    # Root node that connects to all users
+}
