@@ -412,7 +412,3 @@ graph mshauri_graph {
     }
 }
 
-# Root node definition (add this to your nodes file)
-node root {
-    # Root node that connects to all users
-}
