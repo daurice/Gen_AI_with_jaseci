@@ -1,12 +1,12 @@
 """Command line interface tool for the Jac language."""
 
 import ast as ast3
-import importlib
 import marshal
 import os
 import pickle
 import sys
 import types
+from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +18,7 @@ from jaclang.runtimelib.builtin import printgraph
 from jaclang.runtimelib.constructs import WalkerArchetype
 from jaclang.runtimelib.machine import ExecutionContext, JacMachine as Jac
 from jaclang.runtimelib.utils import read_file_with_encoding
+from jaclang.settings import settings
 from jaclang.utils.helpers import debugger as db
 from jaclang.utils.lang_tools import AstTool
 
@@ -61,7 +62,7 @@ def format(path: str, outfile: str = "", to_screen: bool = False) -> None:
     if path.endswith(".jac"):
         if not path_obj.exists():
             print(f"Error: File '{path}' does not exist.", file=sys.stderr)
-            return
+            exit(1)
         formatted_code = JacProgram.jac_file_formatter(str(path_obj))
         write_formatted_code(formatted_code, str(path_obj))
         return
@@ -78,6 +79,7 @@ def format(path: str, outfile: str = "", to_screen: bool = False) -> None:
 
     # Case 3: Invalid path
     print(f"Error: '{path}' is not a .jac file or directory.", file=sys.stderr)
+    exit(1)
 
 
 def proc_file_sess(
@@ -103,6 +105,7 @@ def proc_file_sess(
             "Not a valid file!\nOnly supports `.jac`, `.jir`, and `.py`",
             file=sys.stderr,
         )
+        exit(1)
     mach = ExecutionContext(session=session, root=root)
     Jac.set_context(mach)
     return base, mod, mach
@@ -148,6 +151,8 @@ def run(
             )
         except Exception as e:
             print(f"Error running {filename}: {e}", file=sys.stderr)
+            mach.close()
+            exit(1)
     elif filename.endswith(".jir"):
         try:
             with open(filename, "rb") as f:
@@ -160,11 +165,8 @@ def run(
                 )
         except Exception as e:
             print(f"Error running {filename}: {e}", file=sys.stderr)
-    else:
-        print(
-            "Not a valid file!\nOnly supports `.jac`, `.jir`, and `.py`",
-            file=sys.stderr,
-        )
+            mach.close()
+            exit(1)
 
     mach.close()
 
@@ -212,6 +214,8 @@ def get_object(filename: str, id: str, session: str = "", main: bool = True) -> 
         data = obj.__jac__.__getstate__()
     else:
         print(f"Object with id {id} not found.", file=sys.stderr)
+        mach.close()
+        exit(1)
     mach.close()
     return data
 
@@ -241,6 +245,9 @@ def build(filename: str, typecheck: bool = False) -> None:
 
     for alrt in out.errors_had + out.warnings_had:
         print(alrt.pretty_print(), file=sys.stderr)
+
+    if errs > 0:
+        exit(1)
 
     with open(filename[:-4] + ".jir", "wb") as f:
         pickle.dump(out, f)
@@ -277,8 +284,11 @@ def bind(filename: str, typecheck: bool = False) -> None:
                 divider = "=" * 40
                 print(f"{divider}\n{header}\n{divider}\n{mods.sym_tab.sym_pp()}")
         print(f"Errors: {errs}, Warnings: {warnings}")
+        if errs > 0:
+            exit(1)
     else:
         print("Not a .jac/.py file.", file=sys.stderr)
+        exit(1)
 
 
 @cmd_registry.register
@@ -305,8 +315,11 @@ def check(filename: str, print_errs: bool = True) -> None:
             for e in prog.errors_had:
                 print("Error:", e, file=sys.stderr)
         print(f"Errors: {errs}, Warnings: {warnings}")
+        if errs > 0:
+            exit(1)
     else:
         print("Not a .jac file.", file=sys.stderr)
+        exit(1)
 
 
 @cmd_registry.register
@@ -322,25 +335,7 @@ def lsp() -> None:
     Examples:
         jac lsp
     """
-    from jaclang.langserve.server import run_lang_server
-
-    run_lang_server()
-
-
-@cmd_registry.register
-def lsp_dev() -> None:
-    """Run Jac Language Server Protocol in Developer Mode.
-
-    Starts the experimental Jac Language Server with enhanced features
-    for development and testing. Used by editor extensions in developer mode.
-
-    Args:
-        This command takes no parameters.
-
-    Examples:
-        jac lsp_dev
-    """
-    from jaclang.langserve.dev_server import run_lang_server
+    from jaclang.langserve.server import run_lang_server  # type: ignore
 
     run_lang_server()
 
@@ -398,6 +393,8 @@ def enter(
         (loaded_mod,) = ret_module
         if not loaded_mod:
             print("Errors occurred while importing the module.", file=sys.stderr)
+            mach.close()
+            exit(1)
         else:
             archetype = getattr(loaded_mod, entrypoint)(*args)
 
@@ -488,6 +485,7 @@ def tool(tool: str, args: Optional[list] = None) -> None:
             raise e
     else:
         print(f"Ast tool {tool} not found.", file=sys.stderr)
+        exit(1)
 
 
 @cmd_registry.register
@@ -525,8 +523,10 @@ def debug(filename: str, main: bool = True, cache: bool = False) -> None:
                 print("Done debugging.")
         else:
             print(f"Error while generating bytecode in {filename}.", file=sys.stderr)
+            exit(1)
     else:
         print("Not a .jac file.", file=sys.stderr)
+        exit(1)
 
 
 @cmd_registry.register
@@ -597,6 +597,7 @@ def dot(
         jac_machine.close()
     else:
         print("Not a .jac file.", file=sys.stderr)
+        exit(1)
 
 
 @cmd_registry.register
@@ -629,8 +630,10 @@ def py2jac(filename: str) -> None:
             print(formatted_code)
         else:
             print("Error converting Python code to Jac.", file=sys.stderr)
+            exit(1)
     else:
         print("Not a .py file.")
+        exit(1)
 
 
 @cmd_registry.register
@@ -649,9 +652,46 @@ def jac2py(filename: str) -> None:
     """
     if filename.endswith(".jac"):
         code = JacProgram().compile(file_path=filename).gen.py
-        print(code)
+        if code:
+            print(code)
+        else:
+            exit(1)
     else:
         print("Not a .jac file.", file=sys.stderr)
+        exit(1)
+
+
+@cmd_registry.register
+def jac2lib(filename: str) -> None:
+    """Convert a Jac file to Python library code.
+
+    Translates Jac source code to equivalent Python code with library mode enabled.
+    In library mode, the generated Python uses direct imports from jaclang.lib
+    instead of aliased imports, making the output cleaner and more suitable for
+    use as a standalone library.
+
+    Args:
+        filename: Path to the .jac file to convert
+
+    Examples:
+        jac jac2lib myprogram.jac > mylib.py
+    """
+    if filename.endswith(".jac"):
+        # Temporarily enable library mode
+        original_library_mode = settings.library_mode
+        settings.library_mode = True
+        try:
+            code = JacProgram().compile(file_path=filename).gen.py
+            if code:
+                print(code)
+            else:
+                exit(1)
+        finally:
+            # Restore original setting
+            settings.library_mode = original_library_mode
+    else:
+        print("Not a .jac file.", file=sys.stderr)
+        exit(1)
 
 
 def start_cli() -> None:
@@ -673,8 +713,11 @@ def start_cli() -> None:
     args = parser.parse_args()
     cmd_registry.args = args
 
+    # Apply global settings overrides from CLI flags before running commands
+    settings.load_command_line_arguments(args)
+
     if args.version:
-        version = importlib.metadata.version("jaclang")
+        version = pkg_version("jaclang")
         print(f"Jac version {version}")
         print("Jac path:", __file__)
         return
@@ -692,7 +735,12 @@ def start_cli() -> None:
     args_dict = vars(args)
     args_dict.pop("command")
     args_dict.pop("version", None)
-    ret = command.call(**args_dict)
+
+    # Only pass parameters that the target command accepts
+    allowed_params = set(command.sig.parameters.keys())
+    filtered_args = {k: v for k, v in args_dict.items() if k in allowed_params}
+
+    ret = command.call(**filtered_args)
     if ret:
         print(ret)
 

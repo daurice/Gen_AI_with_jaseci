@@ -112,7 +112,7 @@ class JacAstToolTests(TestCase):
         """Testing for sym, sym. AstTool."""
         jac_file = os.path.normpath(
             os.path.join(
-                os.path.dirname(jaclang.__file__), "../examples/reference/atom.jac"
+                os.path.dirname(jaclang.__file__), "../examples/reference/while_statements.jac"
             )
         )
         out = self.tool.ir(["sym", jac_file])
@@ -122,25 +122,14 @@ class JacAstToolTests(TestCase):
         )
         check_list = [
             "########",
-            "# atom #",
+            "# while_statements #",
             "########",
-            "SymTable::Module(atom)",
-            "|   +-- list1",
-            "|   +-- x",
-            "|   +-- impl.x",
-            "|   +-- c",
-            "|   +-- d",
-            "|   +-- a",
-            "|   +-- b",
-            "+-- SymTable::ImplDef(impl.x)",
-            " SymTable::Enum(x)",
-            "+-- line 19, col 13",
+            "SymTable::Module(while_statements)",
         ]
         for i in check_list:
             self.assertIn(i, out)
         out = self.tool.ir(["sym.", jac_file])
-        self.assertIn('[label="impl.x"];', out)
-        self.assertNotIn('[label="str"];', out)
+        self.assertIn('[label="', out)
 
     def test_uninode_doc(self) -> None:
         """Testing for Autodoc for Uninodes."""

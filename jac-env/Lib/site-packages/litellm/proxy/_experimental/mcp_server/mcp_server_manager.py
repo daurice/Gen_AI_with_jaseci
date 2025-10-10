@@ -10,7 +10,7 @@ import asyncio
 import datetime
 import hashlib
 import json
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional, Set, Union, cast
 
 from fastapi import HTTPException
 from mcp.types import CallToolRequestParams as MCPCallToolRequestParams
@@ -212,6 +212,9 @@ class MCPServerManager:
                     "authentication_token", server_config.get("auth_value", None)
                 ),
                 mcp_info=mcp_info,
+                extra_headers=server_config.get("extra_headers", None),
+                allowed_tools=server_config.get("allowed_tools", None),
+                disallowed_tools=server_config.get("disallowed_tools", None),
                 access_groups=server_config.get("access_groups", None),
             )
             self.config_mcp_servers[server_id] = new_server
@@ -237,41 +240,64 @@ class MCPServerManager:
             )
 
     def add_update_server(self, mcp_server: LiteLLM_MCPServerTable):
-        if mcp_server.server_id not in self.get_registry():
-            _mcp_info: MCPInfo = mcp_server.mcp_info or {}
-            # Use helper to deserialize environment dictionary
-            # Safely access env field which may not exist on Prisma model objects
-            env_data = getattr(mcp_server, "env", None)
-            env_dict = _deserialize_env_dict(env_data)
-            # Use alias for name if present, else server_name
-            name_for_prefix = (
-                mcp_server.alias or mcp_server.server_name or mcp_server.server_id
-            )
-            # Preserve all custom fields from database while setting defaults for core fields
-            mcp_info: MCPInfo = _mcp_info.copy()
-            # Set default values for core fields if not present
-            if "server_name" not in mcp_info:
-                mcp_info["server_name"] = mcp_server.server_name or mcp_server.server_id
-            if "description" not in mcp_info and mcp_server.description:
-                mcp_info["description"] = mcp_server.description
+        try:
+            if mcp_server.server_id not in self.get_registry():
+                _mcp_info: MCPInfo = mcp_server.mcp_info or {}
+                # Use helper to deserialize environment dictionary
+                # Safely access env field which may not exist on Prisma model objects
+                env_data = getattr(mcp_server, "env", None)
+                env_dict = _deserialize_env_dict(env_data)
+                # Use alias for name if present, else server_name
+                name_for_prefix = (
+                    mcp_server.alias or mcp_server.server_name or mcp_server.server_id
+                )
+                # Preserve all custom fields from database while setting defaults for core fields
+                mcp_info: MCPInfo = _mcp_info.copy()
+                # Set default values for core fields if not present
+                if "server_name" not in mcp_info:
+                    mcp_info["server_name"] = (
+                        mcp_server.server_name or mcp_server.server_id
+                    )
+                if "description" not in mcp_info and mcp_server.description:
+                    mcp_info["description"] = mcp_server.description
 
-            new_server = MCPServer(
-                server_id=mcp_server.server_id,
-                name=name_for_prefix,
-                alias=getattr(mcp_server, "alias", None),
-                server_name=getattr(mcp_server, "server_name", None),
-                url=mcp_server.url,
-                transport=cast(MCPTransportType, mcp_server.transport),
-                auth_type=cast(MCPAuthType, mcp_server.auth_type),
-                mcp_info=mcp_info,
-                # Stdio-specific fields
-                command=getattr(mcp_server, "command", None),
-                args=getattr(mcp_server, "args", None) or [],
-                env=env_dict,
-                access_groups=getattr(mcp_server, "mcp_access_groups", None),
-            )
-            self.registry[mcp_server.server_id] = new_server
-            verbose_logger.debug(f"Added MCP Server: {name_for_prefix}")
+                new_server = MCPServer(
+                    server_id=mcp_server.server_id,
+                    name=name_for_prefix,
+                    alias=getattr(mcp_server, "alias", None),
+                    server_name=getattr(mcp_server, "server_name", None),
+                    url=mcp_server.url,
+                    transport=cast(MCPTransportType, mcp_server.transport),
+                    auth_type=cast(MCPAuthType, mcp_server.auth_type),
+                    mcp_info=mcp_info,
+                    extra_headers=getattr(mcp_server, "extra_headers", None),
+                    # oauth specific fields
+                    client_id=getattr(mcp_server, "client_id", None),
+                    client_secret=getattr(mcp_server, "client_secret", None),
+                    scopes=getattr(mcp_server, "scopes", None),
+                    authorization_url=getattr(mcp_server, "authorization_url", None),
+                    token_url=getattr(mcp_server, "token_url", None),
+                    # Stdio-specific fields
+                    command=getattr(mcp_server, "command", None),
+                    args=getattr(mcp_server, "args", None) or [],
+                    env=env_dict,
+                    access_groups=getattr(mcp_server, "mcp_access_groups", None),
+                    allowed_tools=getattr(mcp_server, "allowed_tools", None),
+                    disallowed_tools=getattr(mcp_server, "disallowed_tools", None),
+                )
+                self.registry[mcp_server.server_id] = new_server
+                verbose_logger.debug(f"Added MCP Server: {name_for_prefix}")
+
+        except Exception as e:
+            verbose_logger.debug(f"Failed to add MCP server: {str(e)}")
+            raise e
+
+    def get_all_mcp_server_ids(self) -> Set[str]:
+        """
+        Get all MCP server IDs
+        """
+        all_servers = list(self.get_registry().values())
+        return {server.server_id for server in all_servers}
 
     async def get_allowed_mcp_servers(
         self, user_api_key_auth: Optional[UserAPIKeyAuth] = None
@@ -319,7 +345,7 @@ class MCPServerManager:
         self,
         user_api_key_auth: Optional[UserAPIKeyAuth] = None,
         mcp_auth_header: Optional[str] = None,
-        mcp_server_auth_headers: Optional[Dict[str, str]] = None,
+        mcp_server_auth_headers: Optional[Dict[str, Union[str, Dict[str, str]]]] = None,
     ) -> List[MCPTool]:
         """
         List all tools available across all MCP Servers.
@@ -381,7 +407,7 @@ class MCPServerManager:
     def _create_mcp_client(
         self,
         server: MCPServer,
-        mcp_auth_header: Optional[str] = None,
+        mcp_auth_header: Optional[Union[str, Dict[str, str]]] = None,
         extra_headers: Optional[Dict[str, str]] = None,
     ) -> MCPClient:
         """
@@ -429,8 +455,9 @@ class MCPServerManager:
     async def _get_tools_from_server(
         self,
         server: MCPServer,
-        mcp_auth_header: Optional[str] = None,
+        mcp_auth_header: Optional[Union[str, Dict[str, str]]] = None,
         extra_headers: Optional[Dict[str, str]] = None,
+        add_prefix: bool = True,
     ) -> List[MCPTool]:
         """
         Helper method to get tools from a single MCP server with prefixed names.
@@ -456,9 +483,11 @@ class MCPServerManager:
 
             tools = await self._fetch_tools_with_timeout(client, server.name)
 
-            prefixed_tools = self._create_prefixed_tools(tools, server)
+            prefixed_or_original_tools = self._create_prefixed_tools(
+                tools, server, add_prefix=add_prefix
+            )
 
-            return prefixed_tools
+            return prefixed_or_original_tools
 
         except Exception as e:
             verbose_logger.warning(
@@ -527,7 +556,7 @@ class MCPServerManager:
             return []
 
     def _create_prefixed_tools(
-        self, tools: List[MCPTool], server: MCPServer
+        self, tools: List[MCPTool], server: MCPServer, add_prefix: bool = True
     ) -> List[MCPTool]:
         """
         Create prefixed tools and update tool mapping.
@@ -545,14 +574,16 @@ class MCPServerManager:
         for tool in tools:
             prefixed_name = add_server_prefix_to_tool_name(tool.name, prefix)
 
-            prefixed_tool = MCPTool(
-                name=prefixed_name,
+            name_to_use = prefixed_name if add_prefix else tool.name
+
+            tool_obj = MCPTool(
+                name=name_to_use,
                 description=tool.description,
                 inputSchema=tool.inputSchema,
             )
-            prefixed_tools.append(prefixed_tool)
+            prefixed_tools.append(tool_obj)
 
-            # Update tool to server mapping with both original and prefixed names
+            # Update tool to server mapping for resolution (support both forms)
             self.tool_name_to_mcp_server_name_mapping[tool.name] = prefix
             self.tool_name_to_mcp_server_name_mapping[prefixed_name] = prefix
 
@@ -561,6 +592,16 @@ class MCPServerManager:
         )
         return prefixed_tools
 
+    def check_allowed_or_banned_tools(self, tool_name: str, server: MCPServer) -> bool:
+        """
+        Check if the tool is allowed or banned for the given server
+        """
+        if server.allowed_tools:
+            return tool_name in server.allowed_tools
+        if server.disallowed_tools:
+            return tool_name not in server.disallowed_tools
+        return True
+
     async def pre_call_tool_check(
         self,
         name: str,
@@ -568,7 +609,18 @@ class MCPServerManager:
         server_name_from_prefix: str,
         user_api_key_auth: Optional[UserAPIKeyAuth],
         proxy_logging_obj: ProxyLogging,
+        server: MCPServer,
     ):
+
+        ## check if the tool is allowed or banned for the given server
+        if not self.check_allowed_or_banned_tools(name, server):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": f"Tool {name} is not allowed for server {server.name}. Contact proxy admin to allow this tool."
+                },
+            )
+
         pre_hook_kwargs = {
             "name": name,
             "arguments": arguments,
@@ -638,9 +690,10 @@ class MCPServerManager:
         arguments: Dict[str, Any],
         user_api_key_auth: Optional[UserAPIKeyAuth] = None,
         mcp_auth_header: Optional[str] = None,
-        mcp_server_auth_headers: Optional[Dict[str, str]] = None,
+        mcp_server_auth_headers: Optional[Dict[str, Dict[str, str]]] = None,
         proxy_logging_obj: Optional[ProxyLogging] = None,
         oauth2_headers: Optional[Dict[str, str]] = None,
+        raw_headers: Optional[Dict[str, str]] = None,
     ) -> CallToolResult:
         """
         Call a tool with the given name and arguments (handles prefixed tool names)
@@ -691,10 +744,11 @@ class MCPServerManager:
                 server_name_from_prefix=server_name_from_prefix,
                 user_api_key_auth=user_api_key_auth,
                 proxy_logging_obj=proxy_logging_obj,
+                server=mcp_server,
             )
 
         # Get server-specific auth header if available
-        server_auth_header = None
+        server_auth_header: Optional[Union[Dict[str, str], str]] = None
         if mcp_server_auth_headers and mcp_server.alias:
             server_auth_header = mcp_server_auth_headers.get(mcp_server.alias)
         elif mcp_server_auth_headers and mcp_server.server_name:
@@ -708,6 +762,13 @@ class MCPServerManager:
         extra_headers: Optional[Dict[str, str]] = None
         if mcp_server.auth_type == MCPAuth.oauth2:
             extra_headers = oauth2_headers
+
+        if mcp_server.extra_headers and raw_headers:
+            if extra_headers is None:
+                extra_headers = {}
+            for header in mcp_server.extra_headers:
+                if header in raw_headers:
+                    extra_headers[header] = raw_headers[header]
 
         client = self._create_mcp_client(
             server=mcp_server,
@@ -871,6 +932,14 @@ class MCPServerManager:
             if server.server_id == server_id:
                 return server
         return None
+
+    def get_mcp_server_names_from_ids(self, server_ids: List[str]) -> List[str]:
+        server_names = []
+        registry = self.get_registry()
+        for server in registry.values():
+            if server.server_id in server_ids:
+                server_names.append(server.name)
+        return server_names
 
     def get_mcp_server_by_name(self, server_name: str) -> Optional[MCPServer]:
         """
@@ -1063,25 +1132,23 @@ class MCPServerManager:
             if _server_id in allowed_server_ids:
                 list_mcp_servers.append(
                     LiteLLM_MCPServerTable(
-                        server_id=_server_id,
-                        server_name=_server_config.name,
-                        alias=_server_config.alias,
-                        url=_server_config.url,
-                        transport=_server_config.transport,
-                        auth_type=_server_config.auth_type,
-                        created_at=datetime.datetime.now(),
-                        updated_at=datetime.datetime.now(),
-                        description=(
-                            _server_config.mcp_info.get("description")
-                            if _server_config.mcp_info
-                            else None
-                        ),
-                        mcp_info=_server_config.mcp_info,
-                        mcp_access_groups=_server_config.access_groups or [],
-                        # Stdio-specific fields
-                        command=getattr(_server_config, "command", None),
-                        args=getattr(_server_config, "args", None) or [],
-                        env=getattr(_server_config, "env", None) or {},
+                        **{
+                            **_server_config.model_dump(),
+                            "created_at": datetime.datetime.now(),
+                            "updated_at": datetime.datetime.now(),
+                            "description": (
+                                _server_config.mcp_info.get("description")
+                                if _server_config.mcp_info
+                                else None
+                            ),
+                            "allowed_tools": _server_config.allowed_tools or [],
+                            "mcp_info": _server_config.mcp_info,
+                            "mcp_access_groups": _server_config.access_groups or [],
+                            "extra_headers": _server_config.extra_headers or [],
+                            "command": getattr(_server_config, "command", None),
+                            "args": getattr(_server_config, "args", None) or [],
+                            "env": getattr(_server_config, "env", None) or {},
+                        }
                     )
                 )
 
@@ -1121,39 +1188,19 @@ class MCPServerManager:
                             }
                         )
 
-        # Map servers to their teams and return with health data
-        from typing import cast
+        ## mark invalid servers w/ reason for being invalid
+        valid_server_ids = self.get_all_mcp_server_ids()
+        for server in list_mcp_servers:
+            if server.server_id not in valid_server_ids:
+                server.status = "unhealthy"
+                ## try adding server to registry to get error
+                try:
+                    self.add_update_server(server)
+                except Exception as e:
+                    server.health_check_error = str(e)
+                server.health_check_error = "Server is not in in memory registry yet. This could be a temporary sync issue."
 
-        return [
-            LiteLLM_MCPServerTable(
-                server_id=server.server_id,
-                server_name=server.server_name,
-                alias=server.alias,
-                description=server.description,
-                url=server.url,
-                transport=server.transport,
-                auth_type=server.auth_type,
-                created_at=server.created_at,
-                created_by=server.created_by,
-                updated_at=server.updated_at,
-                updated_by=server.updated_by,
-                mcp_access_groups=(
-                    server.mcp_access_groups
-                    if server.mcp_access_groups is not None
-                    else []
-                ),
-                mcp_info=server.mcp_info,
-                teams=cast(
-                    List[Dict[str, str | None]],
-                    server_to_teams_map.get(server.server_id, []),
-                ),
-                # Stdio-specific fields
-                command=getattr(server, "command", None),
-                args=getattr(server, "args", None) or [],
-                env=getattr(server, "env", None) or {},
-            )
-            for server in list_mcp_servers
-        ]
+        return list_mcp_servers
 
     async def reload_servers_from_database(self):
         """

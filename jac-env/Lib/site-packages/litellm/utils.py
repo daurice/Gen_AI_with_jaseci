@@ -7,7 +7,6 @@
 #
 #  Thank you users! We ❤️ you! - Krrish & Ishaan
 
-from io import StringIO
 import ast
 import asyncio
 import base64
@@ -37,6 +36,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache, wraps
 from importlib import resources
 from inspect import iscoroutine
+from io import StringIO
 from os.path import abspath, dirname, join
 
 import aiohttp
@@ -90,6 +90,7 @@ from litellm.litellm_core_utils.cached_imports import (
     get_set_callbacks,
 )
 from litellm.litellm_core_utils.core_helpers import (
+    get_litellm_metadata_from_kwargs,
     map_finish_reason,
     process_response_headers,
 )
@@ -232,6 +233,9 @@ from typing import (
 
 from openai import OpenAIError as OriginalError
 
+from litellm.litellm_core_utils.llm_response_utils.response_metadata import (
+    update_response_metadata,
+)
 from litellm.litellm_core_utils.thread_pool_executor import executor
 from litellm.litellm_core_utils.token_counter import token_counter as token_counter_new
 from litellm.llms.base_llm.anthropic_messages.transformation import (
@@ -1398,7 +1402,7 @@ def client(original_function):  # noqa: PLR0915
             print_verbose(
                 f"ASYNC kwargs[caching]: {kwargs.get('caching', False)}; litellm.cache: {litellm.cache}; kwargs.get('cache'): {kwargs.get('cache', None)}"
             )
-            _caching_handler_response: CachingHandlerResponse = (
+            _caching_handler_response: Optional[CachingHandlerResponse] = (
                 await _llm_caching_handler._async_get_cache(
                     model=model or "",
                     original_function=original_function,
@@ -1410,14 +1414,15 @@ def client(original_function):  # noqa: PLR0915
                 )
             )
 
-            if (
-                _caching_handler_response.cached_result is not None
-                and _caching_handler_response.final_embedding_cached_response is None
-            ):
-                return _caching_handler_response.cached_result
+            if _caching_handler_response is not None:
+                if (
+                    _caching_handler_response.cached_result is not None
+                    and _caching_handler_response.final_embedding_cached_response is None
+                ):
+                    return _caching_handler_response.cached_result
 
-            elif _caching_handler_response.embedding_all_elements_cache_hit is True:
-                return _caching_handler_response.final_embedding_cached_response
+                elif _caching_handler_response.embedding_all_elements_cache_hit is True:
+                    return _caching_handler_response.final_embedding_cached_response
 
             # CHECK MAX TOKENS
             if (
@@ -1520,6 +1525,7 @@ def client(original_function):  # noqa: PLR0915
             # REBUILD EMBEDDING CACHING
             if (
                 isinstance(result, EmbeddingResponse)
+                and _caching_handler_response is not None
                 and _caching_handler_response.final_embedding_cached_response
                 is not None
             ):
@@ -1676,30 +1682,6 @@ def _is_streaming_request(
     #########################################################
     return False
 
-
-def update_response_metadata(
-    result: Any,
-    logging_obj: LiteLLMLoggingObject,
-    model: Optional[str],
-    kwargs: dict,
-    start_time: datetime.datetime,
-    end_time: datetime.datetime,
-) -> None:
-    """
-    Updates response metadata, adds the following:
-        - response._hidden_params
-        - response._hidden_params["litellm_overhead_time_ms"]
-        - response.response_time_ms
-    """
-    if result is None:
-        return
-
-    metadata = ResponseMetadata(result)
-    metadata.set_hidden_params(logging_obj=logging_obj, model=model, kwargs=kwargs)
-    metadata.set_timing_metrics(
-        start_time=start_time, end_time=end_time, logging_obj=logging_obj
-    )
-    metadata.apply()
 
 
 def _select_tokenizer(
@@ -2822,6 +2804,8 @@ def get_optional_params_embeddings(  # noqa: PLR0915
             object = litellm.AmazonTitanV2Config()
         elif "cohere.embed-multilingual-v3" in model:
             object = litellm.BedrockCohereEmbeddingConfig()
+        elif "twelvelabs" in model or "marengo" in model:
+            object = litellm.TwelveLabsMarengoEmbeddingConfig()
         else:  # unmapped model
             supported_params = []
             _check_valid_arg(supported_params=supported_params)
@@ -7226,6 +7210,8 @@ class ProviderConfigManager:
             return litellm.HuggingFaceRerankConfig()
         elif litellm.LlmProviders.DEEPINFRA == provider:
             return litellm.DeepinfraRerankConfig()
+        elif litellm.LlmProviders.NVIDIA_NIM == provider:
+            return litellm.NvidiaNimRerankConfig()
         return litellm.CohereRerankConfig()
 
     @staticmethod
@@ -7338,6 +7324,8 @@ class ProviderConfigManager:
             )
 
             return VLLMModelInfo()
+        elif LlmProviders.LEMONADE == provider:
+            return litellm.LemonadeChatConfig()
         return None
 
     @staticmethod
@@ -7601,7 +7589,7 @@ def get_end_user_id_for_cost_tracking(
 
     service_type: "litellm_logging" or "prometheus" - used to allow prometheus only disable cost tracking.
     """
-    _metadata = cast(dict, litellm_params.get("metadata", {}) or {})
+    _metadata = cast(dict, get_litellm_metadata_from_kwargs(dict(litellm_params=litellm_params)))
 
     end_user_id = cast(
         Optional[str],

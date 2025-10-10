@@ -179,5 +179,54 @@ class TestLarkParser(TestCaseMicroSuite):
         prog.compile(self.fixture_abs_path("codegentext.jac"))
         self.assertFalse(prog.errors_had)
 
+    def test_param_syntax(self) -> None:
+        """Parse param syntax jac file."""
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+        prog = JacProgram()
+        prog.compile(self.lang_fixture_abs_path("params/param_syntax_err.jac"))
+        sys.stdout = sys.__stdout__
+        self.assertEqual(len(prog.errors_had), 8)
+
+    def test_multiple_syntax_errors(self) -> None:
+        """Parse param syntax jac file."""
+        captured_output = io.StringIO()
+        sys.stdout = captured_output
+        prog = JacProgram()
+        prog.compile(self.fixture_abs_path("multiple_syntax_errors.jac"))
+        sys.stdout = sys.__stdout__
+        self.assertEqual(len(prog.errors_had), 3)
+        expected_errors = [
+            """
+            Missing RPAREN
+                with entry {
+                    foo = Foo(;
+                              ^
+                    func(foo bar)
+                    foo.bar;
+            """,
+            """
+            Missing COMMA
+                with entry {
+                    foo = Foo(;
+                    func(foo bar)
+                             ^^^
+                    foo.bar;
+                }
+            """,
+            """
+            Missing SEMI
+                    foo = Foo(;
+                    func(foo bar)
+                    foo.bar;
+                    ^^^
+                }
+            """
+        ]
+        for idx, alrt in enumerate(prog.errors_had):
+            pretty = alrt.pretty_print()
+            for line in expected_errors[idx].strip().split("\n"):
+                line = line.strip()
+                self.assertIn(line, pretty)
 
 TestLarkParser.self_attach_micro_tests()
