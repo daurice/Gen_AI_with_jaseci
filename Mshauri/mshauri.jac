@@ -9,8 +9,9 @@ glob kra_deadlines = {"income_tax": "2026-06-30", "vat": "2026-07-20"};
 # UTILITY WALKERS - Core graph operations
 # ============================================================================
 
-walker find_user_by_email(email: str) {
-    """Find and return user node by email"""
+walker find_user_by_email(email:str) {
+    
+    # Find and return user node by email
     can visit root, user;
     
     visit {
