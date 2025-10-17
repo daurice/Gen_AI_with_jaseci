@@ -79,5 +79,52 @@ node RagChat(Chat) {
 }
 
 node QAChat(chat){
-    
+    has chat_type: ChatType = ChatType.QA;
+
+    def respond(message:str,chat_history:list[dict])->str by llm(
+            messages=chat_history,
+            max_react_iterations=6 
+    );
+    can chat with infer entry;
+
+}
+walker interact{
+    has message:str;
+    has session_id:str;
+    has chat_history:list[dict]=[];
+    has file_path:str="";
+
+can init_session with `root entry{
+    visit [-->](`?Session)(?id == self.session_id) else{
+        session_node = here ++> Session(id=self.session_id,chat_history=[],file_path=self.file_path,status=1);
+        visit session_node; 
+    }
+
+}
+
+}
+
+node Session{
+    has id:str;
+    has chat_history:list[dict];
+    has status:int=1;
+    has file_path:str="";
+
+can chat with interact entry{
+    visitor.chat_history=self.chat_history;
+    visitor.chat_history.append({"role":"user","content":visitor.message});
+    response=infer(message=visitor.message,chat_history=self.chat_history,file_path=visitor.file_path) spawn root;
+    visitor.chat_history.append({"role":"assistant","content":response.response});
+    self.chat_history=visitor.chat_history;
+    report{"response":response.response};
+
+}
+}
+walker upload_file{
+    has file_name:str;
+    has file_data:str;
+    has session_id:str;
+
+    can save_doc with `root entry;
+
 }
