@@ -82,9 +82,9 @@ if prompt:=st.chat_input("How can I help you?"){
             if response.status_code==200{
                 response=response.json();
                 print("response is:", response);
-                st.write(response["answer"][0]["response"]);
+                st.write(response["reports"][0]["response"]);
                 #add assistant response to chat history
-                st.session_state.messages.append({"role": "assistant", "content": response["answer"][0]["response"]});
+                st.session_state.messages.append({"role": "assistant", "content": response["reports"][0]["response"]});
             }
 
         }
