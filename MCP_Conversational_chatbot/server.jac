@@ -6,7 +6,7 @@ import base64;
 import mcp_client;
 
 glob rag_Engine:RagEngine=RagEngine();
-glob llm = Model(model_name="gemini/gemini-2.0-flash",verbose=True);
+glob llm = Model(model_name='gpt-4o-mini',verbose=True);
 glob MCP_SERVER_URL:str=os.getenv('MCP_SERVER_URL','http://localhost:8899/mcp');
 
 enum ChatType{
@@ -35,8 +35,8 @@ walker infer{
         visit [-->](`?Router) else{
             router_node = here ++> Router();
             router_node ++> RagChat();
-            router_node ++>QAChat();
-            router_node ++> ImaageChat();
+            router_node ++> QAChat();
+            router_node ++> ImageChat();
             router_node ++> VideoChat();
             visit router_node;
 
