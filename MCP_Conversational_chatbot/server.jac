@@ -6,7 +6,7 @@ import base64;
 import mcp_client;
 
 glob rag_Engine:RagEngine=RagEngine();
-glob llm = Model(model_name="gpt-40",verbose=True);
+glob llm = Model(model_name="gemini/gemini-2.0-flash",verbose=True);
 glob MCP_SERVER_URL:str=os.getenv('MCP_SERVER_URL','http://localhost:8899/mcp');
 
 enum ChatType{

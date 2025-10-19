@@ -20,7 +20,7 @@ def bootstrap_front(token:str){
         file_b64=base64.b64encode(uploaded_file.read()).decode('utf-8');
         file_extension=uploaded_file.name.lower().split('.')[-1];
         filetype= uploaded_file.type or "";
-        supported_filetypes=["pdf","docx","xlsx","txt","png","jpg","jpeg","webp","mp4","avi","mov"];
+        supported_filetypes=["pdf","docx","txt","png","jpg","jpeg","webp","mp4","avi","mov"];
         if file_extension not in supported_filetypes and (filetype.startswith("image") or filetype.startswith("video")){
             st.error(f"Unsupported file type: {filetype}. Please upload a file of type: {supported_filetypes}");
             return;
