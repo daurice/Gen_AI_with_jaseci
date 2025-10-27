@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV /home/mugah/gen_ai_jaseci/Gen_AI_with_jaseci/Agentic-AI-main/task_manager/jac_env3
+set -gx VIRTUAL_ENV /home/mugah/gen_ai_jaseci/Gen_AI_with_jaseci/Agentic-AI-main/task_manager/byllm/jac_env3
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH

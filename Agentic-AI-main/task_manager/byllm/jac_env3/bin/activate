@@ -39,10 +39,10 @@ deactivate nondestructive
 if [ "${OSTYPE:-}" = "cygwin" ] || [ "${OSTYPE:-}" = "msys" ] ; then
     # transform D:\path\to\venv to /d/path/to/venv on MSYS
     # and to /cygdrive/d/path/to/venv on Cygwin
-    export VIRTUAL_ENV=$(cygpath /home/mugah/gen_ai_jaseci/Gen_AI_with_jaseci/Agentic-AI-main/task_manager/jac_env3)
+    export VIRTUAL_ENV=$(cygpath /home/mugah/gen_ai_jaseci/Gen_AI_with_jaseci/Agentic-AI-main/task_manager/byllm/jac_env3)
 else
     # use the path as-is
-    export VIRTUAL_ENV=/home/mugah/gen_ai_jaseci/Gen_AI_with_jaseci/Agentic-AI-main/task_manager/jac_env3
+    export VIRTUAL_ENV=/home/mugah/gen_ai_jaseci/Gen_AI_with_jaseci/Agentic-AI-main/task_manager/byllm/jac_env3
 fi
 
 _OLD_VIRTUAL_PATH="$PATH"
