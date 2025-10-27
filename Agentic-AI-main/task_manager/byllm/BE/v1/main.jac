@@ -134,6 +134,12 @@ node GeneralChat {
     }
 }
 
+node RootHandler {
+    can execute with task_manager entry {
+        report "Welcome to byLLM Task Manager!";
+    }
+}
+
 enum RoutingNodes{
     TASK_HANDLING = "TaskHandling",
     EMAIL_HANDLING = "EmailHandling",
