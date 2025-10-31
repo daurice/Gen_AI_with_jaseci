@@ -1,7 +1,7 @@
-// main.jac
-// Entry point: HTTP API server + orchestration
+#main.jac
+#Entry point: HTTP API server + orchestration
 
-import "implementation.jac" as impl;
+import implementation as impl;
 
 walker init {
     has port = 8000;
