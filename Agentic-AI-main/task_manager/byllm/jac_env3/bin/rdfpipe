@@ -1,0 +1,7 @@
+#!/home/mugah/gen_ai_jaseci/Gen_AI_with_jaseci/Agentic-AI-main/task_manager/byllm/jac_env3/bin/python3
+import sys
+from rdflib.tools.rdfpipe import main
+if __name__ == '__main__':
+    if sys.argv[0].endswith('.exe'):
+        sys.argv[0] = sys.argv[0][:-4]
+    sys.exit(main())
