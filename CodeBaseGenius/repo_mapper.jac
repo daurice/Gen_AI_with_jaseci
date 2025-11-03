@@ -16,11 +16,11 @@ node RepoMapper {
         indent = ' ' * 4 * level;
         tree += f"{indent}{path.basename(root)}/\n";
         sub_indent = ' ' * 4 * (level + 1);
-        
         for f in files {
-            if f.startswith('.') or 'node_modules' in root: continue;
+            if (f.startswith('.') or 'node_modules' in root) { continue; }
             tree += f"{sub_indent}{f}\n";
         }
+    }
             
 
     }
