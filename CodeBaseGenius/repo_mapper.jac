@@ -8,24 +8,35 @@ node RepoMapper {
 
     def build_file_tree(local_path: str) -> str {
         tree = "";
-        for root, dirs, files in walk(local_path):
-            level = root.replace(local_path, '').count(path.sep);
+        for (root, dirs, files) in walk(local_path){
+                  level = root.replace(local_path, '').count(path.sep);
             indent = ' ' * 4 * level;
             tree += f"{indent}{path.basename(root)}/\n";
             sub_indent = ' ' * 4 * (level + 1);
-            for f in files:
-                if f.startswith('.') or 'node_modules' in root: continue;
+            for f in files{
+                if f.startswith('.') or 'node_modules' in root{ continue; }
                 tree += f"{sub_indent}{f}\n";
+            }
+                
+        }
+      
+
         return tree;
     }
 
     def find_readme(local_path: str) -> str {
-        for name in ["README.md", "README.rst", "README.txt"]:
+        for name in ["README.md", "README.rst", "README.txt"]{
             p = path.join(local_path, name);
-            if path.exists(p):
-                with open(p, "r") as f: return f.read();
-        return "No README found.";
-    }
+            if path.exists(p){
+                with open(p, "r") as f{return f.read();
+                } 
+                break;
+                }
+            }
+             return "No README found.";
+        }
+       
+    
 
     def summarize_readme(content: str) -> str by llm(
         prompt="Summarize the following README into a concise overview:"

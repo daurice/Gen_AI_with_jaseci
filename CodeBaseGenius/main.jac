@@ -3,15 +3,15 @@ include code_analyzer;
 include doc_genie;
 include utils;
 
-import from byllm.llm {Model};
-import from git {Repo as GitRepo};
-import from tree_sitter {Language, Parser};
-import from os {walk, path, makedirs};
-import from tempfile {mkdtemp};
-import from dotenv {load_dotenv};
+import from byllm.llm {Model}
+import from git {Repo as GitRepo}
+import from tree_sitter {Language, Parser}
+import from os {walk, path, makedirs}
+import from tempfile {mkdtemp}
+import from dotenv {load_dotenv}
 import os;
 
-glob llm = Model(model_name="gpt-4o", verbose=False);
+glob llm = Model(model_name="gemini/gemini-2.0-flash", verbose=False);
 
 # Tree‑sitter language (optional – works without it)
 glob PYTHON_LANGUAGE = Language('build/my-languages.so', 'python');
