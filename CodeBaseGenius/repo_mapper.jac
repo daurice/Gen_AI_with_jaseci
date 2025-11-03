@@ -6,23 +6,40 @@ node RepoMapper {
         return temp_dir;
     }
 
-    def build_file_tree(local_path: str) -> str {
-        tree = "";
-        for (root, dirs, files) in walk(local_path){
-                  level = root.replace(local_path, '').count(path.sep);
-            indent = ' ' * 4 * level;
-            tree += f"{indent}{path.basename(root)}/\n";
-            sub_indent = ' ' * 4 * (level + 1);
-            for f in files{
-                if f.startswith('.') or 'node_modules' in root{ continue; }
-                tree += f"{sub_indent}{f}\n";
+   def build_file_tree(local_path: str) -> str {
+    tree ="";
+    for item in walk(local_path){
+        root  = item[0];
+        dirs  = item[1];
+        files = item[2];
+        level = root.replace(local_path, '').count(path.sep);
+        indent = ' ' * 4 * level;
+        tree += f"{indent}{path.basename(root)}/\n";
+        sub_indent = ' ' * 4 * (level + 1);
+        for f in files {
+            if f.startswith('.') or 'node_modules' in root: continue;
+            tree += f"{sub_indent}{f}\n";
+        }
+            
+
+    }
+    return tree;
+    
+   }
+    
+
+    def find_readme(local_path: str) -> str {
+        for name in ["README.md", "README.rst", "README.txt"]{
+            p = path.join(local_path, name);
+            if path.exists(p){
+                with open(p, "r") as f{return f.read();
+                } 
+                break;
+                }
+    }
+                return "No README found.";
             }
                 
-        }
-      
-
-        return tree;
-    }
 
     def find_readme(local_path: str) -> str {
         for name in ["README.md", "README.rst", "README.txt"]{
