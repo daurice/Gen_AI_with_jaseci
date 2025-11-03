@@ -6,7 +6,7 @@ node CodeAnalyzer {
         self.parser.set_language(PYTHON_LANGUAGE);
     }
 
-    // Very small fallback – LLM does the heavy lifting
+     
     def parse_file(file_path: str) -> dict {
         if not (file_path.endswith('.py') or file_path.endswith('.jac')) {
             return {};
