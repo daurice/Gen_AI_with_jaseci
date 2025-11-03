@@ -22,3 +22,4 @@ if st.button("Generate Documentation") and url:
                 "text/markdown"
             )
         else:
+            st.error("Error generating docs.")
