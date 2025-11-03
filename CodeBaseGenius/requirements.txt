@@ -1,2 +1,5 @@
 byllm
 jac-cloud
+tree-sitter-0.25.2
+tree-sitter-python-0.25.0
+tree-sitter-cli
