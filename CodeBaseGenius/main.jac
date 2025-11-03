@@ -1,222 +1,217 @@
-import from datetime { datetime }
-import from pathlib { Path }
-import from subprocess { run, PIPE }
-import from json { loads, dumps }
-import from typing { List, Dict, Optional }
-import from os { getenv, makedirs, remove }
-import from shutil { rmtree }
-import from uuid { uuid4 }
+import from byllm.llm { Model }
+import from py_modules.repo_cloner { clone_repo, build_file_tree, find_readme }
+import from py_modules.readme_summarizer { summarize_readme }
+import from py_modules.code_parser { extract_functions_and_classes, get_parser }
+import from py_modules.graph_builder { CodeContextGraph }
+import from utils { get_current_datetime, sanitize_filename }
+include utils;
 
-# --- External Python Helpers (via py_module) ---
-py_module git_clone {
-    def clone_repo(url: str, dest: str) -> str {
-        cmd = ["git", "clone", "--depth", "1", url, dest];
-        result = run(cmd, capture_output=True, text=True);
-        if result.returncode != 0 {
-            return f"Clone failed: {result.stderr}";
-        }
-        return "Cloned successfully";
-    }
-}
+glob llm = Model(model_name="gemini/gemini-2.0-flash", verbose=False);
+glob ccg = CodeContextGraph();
 
-py_module tree_sitter_parser {
-    from tree_sitter import Language, Parser
-    from tree_sitter_python import language as PY_LANG
-    from tree_sitter_javascript import language as JS_LANG
-
-    PY = Language(PY_LANG())
-    JS = Language(JS_LANG())
-    PARSER = Parser()
-
-    def parse_file(content: str, lang: str) -> Optional[dict] {
-        if lang == "python":
-            PARSER.set_language(PY)
-        elif lang == "javascript":
-            PARSER.set_language(JS)
-        else:
-            return null;
-
-        tree = PARSER.parse(bytes(content, "utf8"))
-        root = tree.root_node
-
-        def extract_functions(node):
-            funcs = []
-            if node.type in ["function_definition", "method_definition"]:
-                name_node = node.child_by_field_name("name")
-                name = name_node.text.decode("utf8") if name_node else "anonymous"
-                funcs.append({"type": "function", "name": name, "start": node.start_point, "end": node.end_point})
-            for child in node.children:
-                funcs.extend(extract_functions(child))
-            return funcs
-
-        return {
-            "functions": extract_functions(root),
-            "classes": []  # extend later
-        }
-    }
-}
-
-# --- Nodes ---
 node Repo {
     has url: str;
+    has clone_path: str;
+    has tree: dict;
+    has readme_summary: str;
     has name: str;
-    has cloned_at: str = str(datetime.now());
-    has local_path: str;
 }
 
-node FileNode {
+node File {
     has path: str;
-    has content: str = "";
-    has language: str = "";
-    has is_entrypoint: bool = false;
-}
-
-node FunctionNode {
-    has name: str;
-    has file: FileNode;
-    has start_line: int;
-    has end_line: int;
-}
-
-edge Calls { from FunctionNode to FunctionNode }
-edge DefinedIn { from FunctionNode to FileNode }
-
-node CCG {
-    has built_at: str;
-}
-
-node DocSection {
-    has title: str;
     has content: str;
-    has order: int;
+    has language: str;
+    has symbols: list = [];
 }
 
-# --- Agents as Nodes with Walkers ---
-node CodeGenius {
-    has active_repo: Optional[Repo] = null;
+node Documentation {
+    has markdown: str = "";
+    has diagrams: list = [];
+}
 
-    def route_task(task: str, context: str) -> str by llm(
-        method="ReAct",
-        tools=([self.clone_and_map, self.analyze_code, self.generate_docs, self.get_status])
-    );
+walker code_genius {
+    has repo_url: str = "";
+    has session_id: str = "";
+    has repo: Repo = null;
+    has doc: Documentation = null;
 
-    def clone_and_map(repo_url: str) -> str {
-        repo_name = repo_url.split("/")[-1].replace(".git", "");
-        temp_dir = f"./temp_repos/{repo_name}_{uuid4().hex[:8]}";
-        makedirs(temp_dir, exist_ok=true);
+    can start with entry {
+        if not self.repo_url.startswith("https://github.com/"):
+            report {"error": "Invalid GitHub URL"};
+            disengage;
 
-        result = git_clone.clone_repo(repo_url, temp_dir);
-        if "failed" in result.lower():
-            return result;
+        repo_name = self.repo_url.split("/")[-1].replace(".git", "");
+        clone_dir = f"/tmp/codegenius_{sanitize_filename(repo_name)}";
+        try {
+            clone_path = clone_repo(self.repo_url, clone_dir);
+            tree = build_file_tree(clone_path);
+            readme_path = find_readme(clone_path);
+            readme_summary = summarize_readme(readme_path);
 
-        repo = Repo(url=repo_url, name=repo_name, local_path=temp_dir);
-        self ++> repo;
-        self.active_repo = repo;
-
-        # Build file tree
-        walker build_tree {
-            root = here.active_repo;
-            path = Path(root.local_path);
-            for p in path.rglob("*"):
-                if p.is_file() and not any(ignored in str(p) for ignored in [".git", "node_modules", "__pycache__", ".venv"]):
-                    lang = ""
-                    if p.suffix in [".py"]: lang = "python"
-                    elif p.suffix in [".js", ".ts"]: lang = "javascript"
-                    elif p.suffix in [".jac"]: lang = "jac"
-
-                    is_entry = p.name in ["main.py", "app.py", "index.js", "server.js", "README.md"]
-                    file_node = FileNode(path=str(p.relative_to(path)), language=lang, is_entrypoint=is_entry)
-                    if lang in ["python", "javascript"]:
-                        try {
-                            file_node.content = p.read_text(encoding="utf8")
-                        }
-                        except: pass
-                    root ++> file_node;
-            }
+            self.repo = spawn Repo(
+                url=self.repo_url,
+                clone_path=clone_path,
+                tree=tree,
+                readme_summary=readme_summary,
+                name=repo_name
+            );
+            self.doc = spawn Documentation();
+            visit --> (`?repo_mapper);
+        } except e {
+            report {"error": str(e)};
         }
-        build_tree();
+    }
+}
 
-        # Summarize README
-        readme_files = [f for f in repo --> (`?FileNode) if "readme" in f.path.lower()]
-        summary = "No README found."
-        if readme_files:
-            content = readme_files[0].content
-            if len(content) > 3000: content = content[:3000]
-            summary = llm(prompt=f"Summarize this README in 3 bullets:\n\n{content}")["response"]
+walker repo_mapper {
+    can map with entry {
+        repo = visitor.repo;
+        report {
+            "stage": "mapping",
+            "tree": repo.tree,
+            "readme": repo.readme_summary
+        };
+        visit --> (`?code_analyzer);
+    }
+}
 
-        return f"Repo cloned and mapped.\n\n**README Summary:**\n{summary}\n\nReady for analysis.";
+walker code_analyzer {
+    has priority_files: list = ["main.py", "app.py", "__init__.py", "index.jac"];
+    has processed: set = {};
+
+    def should_analyze(filepath: str) -> bool {
+        ext = filepath.split(".")[-1];
+        return ext in ["py", "jac"];
+
+    def analyze_file(filepath: str) {
+        if filepath in self.processed:
+            return;
+        self.processed.add(filepath);
+
+        with open(filepath, "r") as f:
+            code = f.read();
+        parser = get_parser(filepath);
+        if not parser:
+            return;
+
+        symbols = extract_functions_and_classes(code, parser);
+        file_node = spawn File(path=filepath, content=code, language=filepath.split(".")[-1], symbols=symbols);
+        here ++> file_node;
+
+        for sym in symbols:
+            node_id = f"{filepath}:{sym['name']}";
+            ccg.add_node(filepath, sym['name'], sym['type'], sym['line']);
     }
 
-    def analyze_code() -> str {
-        repo = self.active_repo;
-        if not repo: return "No active repo.";
+    can analyze with entry {
+        repo = visitor.repo;
+        root = repo.clone_path;
 
-        entry_files = [f for f in repo --> (`?FileNode) if f.is_entrypoint and f.content]
-        total = len(entry_files)
-        analyzed = 0
+        # Priority first
+        for pri in self.priority_files:
+            path = f"{root}/{pri}";
+            if os.path.exists(path):
+                self.analyze_file(path);
 
-        for file in entry_files:
-            if not file.content: continue
-            parse_result = tree_sitter_parser.parse_file(file.content, file.language)
-            if not parse_result: continue
+        # Then traverse tree
+        def walk_dir(dir_path: str) {
+            for item in os.listdir(dir_path):
+                full = f"{dir_path}/{item}";
+                if os.path.isdir(full):
+                    walk_dir(full);
+                elif self.should_analyze(full):
+                    self.analyze_file(full);
+        }
+        walk_dir(root);
 
-            for func in parse_result["functions"]:
-                func_node = FunctionNode(
-                    name=func["name"],
-                    start_line=func["start"][0],
-                    end_line=func["end"][0]
-                )
-                file ++> func_node with DefinedIn;
-                analyzed += 1
-
-        ccg = CCG(built_at=str(datetime.now()));
-        repo ++> ccg;
-
-        return f"Analyzed {analyzed} functions across {total} entrypoint files. CCG built.";
+        # TODO: Build call graph via LLM + static analysis hybrid
+        report {"stage": "analysis_complete", "files_analyzed": len(self.processed)};
+        visit --> (`?doc_genie);
     }
+}
 
-    def generate_docs() -> str {
-        repo = self.active_repo;
-        if not repo: return "No repo.";
+walker doc_genie {
+    def generate_diagram(graph_data: dict) -> str {
+        import pygraphviz as pgv
+        G = pgv.AGraph(directed=True)
+        for node in graph_data['nodes']:
+            G.add_node(node['id'], label=node['data']['name'], shape="box")
+        for link in graph_data['links']:
+            if link['data']['relationship'] == "calls":
+                G.add_edge(link['source'], link['target'], label="calls")
+        dot_path = f"./outputs/{visitor.repo.name}/callgraph.dot";
+        png_path = dot_path.replace(".dot", ".png");
+        os.makedirs(os.path.dirname(dot_path), exist_ok=True);
+        G.draw(png_path, prog="dot")
+        return f"![Call Graph]({png_path})"
 
-        files = [repo --> (`?FileNode)]
-        functions = [repo --> (`?FunctionNode)]
-        readme_summary = "No README."
+    can generate with entry {
+        repo = visitor.repo;
+        doc = visitor.doc;
+        output_dir = f"./outputs/{repo.name}";
+        os.makedirs(output_dir, exist_ok=True);
 
-        readme_file = next((f for f in files if "readme" in f.path.lower()), null)
-        if readme_file and readme_file.content:
-            readme_summary = llm(prompt=f"Extract project name, description, install, usage in bullet points:\n\n{readme_file.content[:4000]}")["response"]
+        md = f"# {repo.name} Documentation\n\n";
+        md += f"**Generated on:** {get_current_datetime()}\n\n";
+        md += f"## Project Overview\n{repo.readme_summary}\n\n";
 
-        # Group functions by file
-        func_by_file = {}
-        for func in functions:
-            file = func <-- (`?DefinedIn)
-            if file:
-                path = file[0].path
-                func_by_file.setdefault(path, []).append(func)
+        md += "## File Structure\n```text\n";
+        def print_tree(node: dict, indent: str = "") {
+            if node['type'] == 'dir':
+                md += f"{indent}+ {node['name']}/\n";
+                for child in node['children']:
+                    print_tree(child, indent + "  ");
+            else:
+                md += f"{indent}- {node['name']}\n";
+        }
+        print_tree(repo.tree);
+        md += "```\n\n";
 
-        # Generate API Reference
-        api_ref = ""
-        for path, funcs in func_by_file.items():
-            api_ref += f"### `{path}`\n\n"
-            for f in funcs:
-                api_ref += f"- **`{f.name}()`** (lines {f.start_line}-{f.end_line})\n"
-            api_ref += "\n"
+        md += "## API Reference\n";
+        files = [here --> (`?File)];
+        for f in files:
+            if f.language == 'py':
+                md += f"### `{f.path}`\n";
+                for sym in f.symbols:
+                    md += f"- **{sym['type']}** `{sym['name']}` (Line {sym['line']})\n";
 
-        # Diagram (Mermaid)
-        mermaid_calls = "graph TD;\n"
-        call_id = 0
-        for func in functions[:10]:  # limit for demo
-            call_id += 1
-            mermaid_calls += f"    F{call_id}[{func.name}]\n"
+        # Diagram
+        graph_data = ccg.to_dict();
+        if len(graph_data['nodes']) > 1:
+            diagram_md = self.generate_diagram(graph_data);
+            md += "\n## Call Graph\n" + diagram_md + "\n";
 
-        final_md = f"""# {repo.name} Documentation
+        doc.markdown = md;
+        doc_path = f"{output_dir}/docs.md";
+        with open(doc_path, "w") as f:
+            f.write(md);
 
-## Overview
-{readme_summary}
+        report {
+            "stage": "complete",
+            "documentation_path": doc_path,
+            "message": "Documentation generated successfully!"
+        };
+    }
+}
 
-## Installation
-```bash
-git clone {repo.url}
-cd {repo.name}
-# Follow README
+walker get_documentation {
+    can get with `root entry {
+        repos = [root --> (`?Repo)];
+        if not repos:
+            report {"error": "No repository processed"};
+            disengage;
+        latest = repos[-1];
+        doc_path = f"./outputs/{latest.name}/docs.md";
+        if os.path.exists(doc_path):
+            with open(doc_path, "r") as f:
+                content = f.read();
+            report {"markdown": content, "repo": latest.name};
+        else:
+            report {"error": "Documentation not found"};
+    }
+}
+
+with entry {
+    # Ensure output dir
+    os.makedirs("./outputs", exist_ok=True);
+}

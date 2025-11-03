@@ -1,8 +1,2 @@
-jaseci
-jaseci-serv
-streamlit
-requests
-tree-sitter
-tree-sitter-python
-tree-sitter-javascript
-python-dotenv
+byllm
+jac-cloud
