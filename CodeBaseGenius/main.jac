@@ -47,9 +47,10 @@ walker Supervisor {
         repo_name = self.url.split('/')[-1];
         out_dir   = f"./outputs/{repo_name}";
         makedirs(out_dir, exist_ok=True);
-        with open(f"{out_dir}/docs.md", "w") as f {
-            f.write(self.repo.docs);
-        }
+        f = open(f"{output_dir}/docs.md", 'w');
+        f.write(self.repo_node.docs);
+        f.close();
+       
 
         report {
             "docs": self.repo.docs,
