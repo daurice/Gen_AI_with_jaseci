@@ -16,6 +16,8 @@ glob llm = Model(model_name="gemini/gemini-2.0-flash", verbose=False);
 # Tree‑sitter language (optional – works without it)
 glob PYTHON_LANGUAGE = Language('build/my-languages.so', 'python');
 
+
+
 node Repository {
     has url: str;
     has local_path: str = "";
@@ -29,7 +31,7 @@ walker Supervisor {
     has url: str;
     has repo: Repository = null;
 
-    can generate_documentation with root entry {
+    can generate_documentation with `root entry {
         if not self.url {
             report "No repository URL provided.";
             disengage;
@@ -46,15 +48,17 @@ walker Supervisor {
         #  3. persist the markdown
         repo_name = self.url.split('/')[-1];
         out_dir   = f"./outputs/{repo_name}";
-        makedirs(out_dir, exist_ok=True);
-        f = open(f"{output_dir}/docs.md", 'w');
-        f.write(self.repo_node.docs);
-        f.close();
+        out_path  = f"{out_dir}/docs.md";
+        
+        std.mkdir(out_dir, parents=True, exist_ok=True);
++       std.write(out_path, self.repo.docs);
+        
+       
        
 
         report {
             "docs": self.repo.docs,
-            "output_path": f"{out_dir}/docs.md"
+            "output_path": out_path
         };
     }
 }
