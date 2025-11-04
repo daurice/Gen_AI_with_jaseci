@@ -42,17 +42,7 @@ node RepoMapper {
             }
                 
 
-    def find_readme(local_path: str) -> str {
-        for name in ["README.md", "README.rst", "README.txt"]{
-            p = path.join(local_path, name);
-            if path.exists(p){
-                with open(p, "r") as f{return f.read();
-                } 
-                break;
-                }
-            }
-             return "No README found.";
-        }
+    
        
     
 
