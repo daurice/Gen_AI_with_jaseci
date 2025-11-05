@@ -17,7 +17,7 @@ if st.button("Generate Documentation") and url:
     with st.spinner("Working... This may take 30–90 seconds"):
         try:
             response = requests.post(
-                "http://localhost:8000/walker/generate_documentation",
+                "http://localhost:8000/walker/Supervisor/generate_documentation",
                 json={"url": url},
                 timeout=180
             )
