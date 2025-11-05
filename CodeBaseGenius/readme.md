@@ -21,6 +21,6 @@ This is a multi-agent Jac application for generating high-quality documentation 
 6. Run: jac serve main.jac
 
 ## Usage
-Call the walker via API: POST /walker/generate_documentation {"url": "https://github.com/user/repo"}
+Call the walker via API: POST /walker/generate_documentation 
 
 See app.py for Streamlit frontend.
