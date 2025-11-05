@@ -49,10 +49,10 @@ walker Supervisor {
 
         std.mkdir(out_dir, true, true);
         std.write(out_path, self.repo.docs);
-        report {
+        report [ {
             "docs": self.repo.docs,
             "output_path": out_path
-        };
+        }];
     }
 }
 
