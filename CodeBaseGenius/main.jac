@@ -1,10 +1,12 @@
 # ------------------------------------------------------------
 # 1. Load the node definition FIRST
 # ------------------------------------------------------------
+include jac_cloud;      # defines byllm.llm
 include repository;      # defines node Repository
 include repo_mapper;     # defines walker RepoMapper
 include code_analyzer;   # defines walker CodeAnalyzer
 include doc_genie;       # defines walker DocGenie
+
 
 # ------------------------------------------------------------
 # 2. Python imports
