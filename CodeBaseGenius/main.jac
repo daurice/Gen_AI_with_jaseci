@@ -6,6 +6,7 @@ include repository;      # defines node Repository
 include repo_mapper;     # defines walker RepoMapper
 include code_analyzer;   # defines walker CodeAnalyzer
 include doc_genie;       # defines walker DocGenie
+include APIroot;         # defines walker ApiRoot
 
 
 # ------------------------------------------------------------
@@ -29,6 +30,8 @@ glob llm = Model(model_name="gemini/gemini-2.0-flash", verbose=False);
 walker Supervisor {
     has url: str;
     has repo: Repository;
+
+  
 
     can generate_documentation with root entry {
         if ( not self.url) {
