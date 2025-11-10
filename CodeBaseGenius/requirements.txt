@@ -1,0 +1,5 @@
+gitpython
+tree-sitter
+python-dotenv
+streamlit
+requests

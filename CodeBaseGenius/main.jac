@@ -1,57 +1,69 @@
-#main.jac
-#Entry point: HTTP API server + orchestration
+# ------------------------------------------------------------
+# 1. Load the node definition FIRST
+# ------------------------------------------------------------
+include jac_cloud;      # defines byllm.llm
+include repository;      # defines node Repository
+include repo_mapper;     # defines walker RepoMapper
+include code_analyzer;   # defines walker CodeAnalyzer
+include doc_genie;       # defines walker DocGenie
+include APIroot;         # defines walker ApiRoot
 
-import implementation as impl;
 
-walker init {
-    has port = 8000;
-    can http.serve;
+# ------------------------------------------------------------
+# 2. Python imports
+# ------------------------------------------------------------
+import from byllm.llm {Model}
+import from git {Repo as GitRepo}
+import from os {path}
+import from tempfile {mkdtemp}
+import from dotenv {load_dotenv}
+
+
+# ------------------------------------------------------------
+# 3. Global LLM instance
+# ------------------------------------------------------------
+glob llm = Model(model_name="gemini/gemini-2.0-flash", verbose=False);
+
+# ------------------------------------------------------------
+# 4. Supervisor walker (API endpoint)
+# ------------------------------------------------------------
+walker Supervisor {
+    has url: str;
+    has repo: Repository;
+
+  
+
+    can generate_documentation with root entry {
+        if ( not self.url) {
+            report {"error": "No URL supplied"};
+            disengage;
+        }
+
+        # spawn the shared node
+        self.repo = spawn Repository(url=self.url);
+
+        # run the three agents in parallel (order does not matter after spawn)
+        spawn RepoMapper(repo=self.repo);
+        spawn CodeAnalyzer(repo=self.repo);
+        spawn DocGenie(repo=self.repo);
+
+        # write the final markdown file
+        repo_name = self.url.split("/")[-1];
+        out_dir   = f"./outputs/{repo_name}";
+        out_path  = f"{out_dir}/docs.md";
+
+        std.mkdir(out_dir, true, true);
+        std.write(out_path, self.repo.docs);
+        report [ {
+            "docs": self.repo.docs,
+            "output_path": out_path
+        }];
+    }
 }
 
-walker generate_docs {
-    has url;
-    has temp_dir, repo_name, output_path;
-
-    # Validate GitHub URL
-    if (!url.matches(r"https://github\.com/[\w\-\.]+/[\w\-\.]+(\.git)?$")) {
-        report {"error": "Invalid GitHub URL"};
-        -> exit;
-    }
-
-    repo_name = url.split("/")[-1].replace(".git", "");
-    temp_dir = "/tmp/cbg_" + std.uuid();
-    output_path = f"./outputs/{repo_name}/docs.md";
-
-    # Step 1: Clone & map repo
-    spawn impl.repo_mapper.clone_and_map(url, temp_dir) -> tree, readme;
-
-    # Step 2: Supervisor plans
-    plan = spawn impl.supervisor.plan(tree, readme);
-
-    # Step 3: Build CCG
-    ccg = spawn impl.code_analyzer.build_ccg(temp_dir, plan);
-
-    # Step 4: Generate docs
-    docs_md = spawn impl.doc_genie.generate(ccg, tree, readme, repo_name);
-
-    # Save
-    std.file.makedirs(f"./outputs/{repo_name}", exist_ok=true);
-    std.file.write(output_path, docs_md);
-
-    report {
-        "status": "success",
-        "repo": repo_name,
-        "documentation": output_path,
-        "download": f"/download?repo={repo_name}"
-    };
-}
-
-walker download {
-    has repo;
-    path = f"./outputs/{repo}/docs.md";
-    if (std.file.exists(path)) {
-        -> http.send_file(path, "docs.md");
-    } else {
-        report {"error": "Documentation not found"};
-    }
+# ------------------------------------------------------------
+# 5. Load .env at startup
+# ------------------------------------------------------------
+with entry {
+    load_dotenv();
 }
